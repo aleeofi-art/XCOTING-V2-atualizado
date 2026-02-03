@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Lock, User, Mail, ArrowRight, AlertCircle, Info } from 'lucide-react';
@@ -37,7 +36,6 @@ const Register: React.FC = () => {
       });
 
       if (signUpError) {
-        // Tratamento específico para o erro de e-mail do Supabase
         if (signUpError.message.toLowerCase().includes('confirmation email') || signUpError.message.toLowerCase().includes('smtp')) {
           setError('ERRO DE SEGURANÇA: O administrador do sistema precisa desativar a "Confirmação de E-mail" no painel do Supabase (Auth > Providers > Email > Confirm Email: OFF) para liberar novos registros sem erro.');
           setIsSubmitting(false);
@@ -48,12 +46,35 @@ const Register: React.FC = () => {
 
       if (!authData.user) throw new Error("Erro ao criar conta.");
 
-      // 2. Salvar no Perfil Público (profiles)
+      // 🆕 2. CRIAR UM NOVO TENANT (EMPRESA) PARA ESTE USUÁRIO
+      const { data: newTenant, error: tenantError } = await supabase
+        .from('tenants')
+        .insert({ 
+          nome_empresa: `Empresa de ${name}` // Você pode personalizar isso
+        })
+        .select()
+        .single();
+
+      if (tenantError) {
+        throw new Error('Erro ao criar empresa: ' + tenantError.message);
+      }
+
+      // 🆕 3. ASSOCIAR O TENANT_ID AO USUÁRIO
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: { tenant_id: newTenant.id }
+      });
+
+      if (updateError) {
+        throw new Error('Erro ao associar empresa ao usuário: ' + updateError.message);
+      }
+
+      // 🆕 4. SALVAR NO PERFIL PÚBLICO COM O TENANT_ID
       await supabase.from('profiles').upsert({
         id: authData.user.id,
         name: name,
         email: email,
-        role: 'operador' // Registro padrão como operador
+        role: 'operador',
+        tenant_id: newTenant.id // 👈 ADICIONAR O TENANT_ID AQUI
       });
 
       await useAppStore.getState().initialize();
