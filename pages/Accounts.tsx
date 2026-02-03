@@ -1,583 +1,401 @@
-
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
+import Layout from '../components/Layout';
+import { db } from '../services/db';
+import { AdAccount, Platform, AccountStatus, Script, CaseLog } from '../types';
 import { 
-  Plus, Search, Filter, ChevronDown, ChevronRight, 
-  Trash2, X, Mail, Lock, CheckCircle, 
-  AlertCircle, ShieldCheck, Globe, Server, UserCheck, CreditCard, Calendar, FileCode, Info
+  Search, Plus, MoreHorizontal, X, History, 
+  CheckCircle2, LayoutGrid,
+  Trash2, Edit, Save, CreditCard, Clock, TerminalSquare, RefreshCw
 } from 'lucide-react';
-import { useShallow } from 'zustand/react/shallow';
-import { Button, Input, Badge, Textarea, Modal } from '../components/ui';
-import { Profile, AdAccount, AccountStatus, Tier, BlockReason } from '../types';
-import { useAppStore } from '../store';
-import { generateUUID } from '../utils/dbSanitize';
-import { useAuth } from '../hooks/useAuth';
 
-// Componente Toggle estilo "Arrasta pro lado" (Slide)
-const Toggle: React.FC<{ checked: boolean; onChange: (val: boolean) => void; label: string }> = ({ checked, onChange, label }) => (
-  <div 
-    className="flex justify-between items-center p-4 border border-border rounded-xl bg-background-tertiary/20 hover:border-primary/40 transition-all cursor-pointer group" 
-    onClick={() => onChange(!checked)}
-  >
-    <span className="text-[9px] font-bold text-white uppercase tracking-wider group-hover:text-primary transition-colors">{label}</span>
-    <div className={`w-10 h-5 rounded-full transition-all duration-300 relative ${checked ? 'bg-primary shadow-[0_0_10px_rgba(99,102,241,0.4)]' : 'bg-background-tertiary border border-border'}`}>
-      <div className={`absolute top-1 w-3 h-3 rounded-full bg-white shadow-sm transition-all duration-300 ${checked ? 'left-6' : 'left-1'}`} />
-    </div>
-  </div>
-);
-
-const BLOCK_REASONS_HIERARCHY: Record<string, string[]> = {
-  "Fraude e Contorno de Sitema": [
-    "Fraude de sistema (Circumventing systems)",
-    "Criação indevida de múltiplas contas",
-    "Verificação do anunciante inválida",
-    "Contorno de políticas"
+// Comprehensive Suspension Reasons
+const SUSPENSION_REASONS = {
+  [Platform.GOOGLE]: [
+    'Técnicas de cloaking → Circumventing Systems',
+    'Fraude de sistema: criação indevida de várias contas → Circumventing Systems – Multiple Account Abuse',
+    'Preocupações de pagamento futuro → Suspicious Payment Activity',
+    'Práticas comerciais inaceitáveis → Unacceptable Business Practices',
+    'Operações comerciais → Business Operations Policy Violation'
   ],
-  "Técnicas de Evasão (Cloaking)": [
-    "Cloaking",
-    "Redirecionamentos enganosos",
-    "Bridge pages / rotadores de URL",
-    "Mascaramento de domínio ou scripts anti-bot"
+  [Platform.META]: [
+    'Atividade Incomum na Conta (Unusual Activity)',
+    'Restrição de Publicidade (Advertising Access Restricted)',
+    'Violação de Política de Publicidade',
+    'Identidade Não Confirmada',
+    'Falha no Pagamento / Cartão Recusado',
+    'Contorno de Sistemas (Circumventing Systems)',
+    'Qualidade da Conta Baixa (Account Quality)',
+    'Associação com Ativos Restritos',
+    'Bloqueio de Business Manager (BM)',
+    'Página Restrita (Fanpage Ban)'
   ],
-  "Práticas Comerciais Enganosas": [
-    "Práticas inaceitáveis",
-    "Operações enganosas",
-    "Informações falsas ou promessas irreais",
-    "Má representação do anunciante"
-  ],
-  "Pagamentos e Financeiro": [
-    "Atividade de pagamento suspeita",
-    "Pagamento recusado",
-    "Falha de cobrança",
-    "Chargeback / estorno",
-    "Saldo pendente ou não pago"
-  ],
-  "Segurança do Site": [
-    "Malware",
-    "Phishing",
-    "Site comprometido",
-    "Coleta indevida de dados"
-  ],
-  "Qualidade da Experience": [
-    "Baixa qualidade de landing page",
-    "Conteúdo insuficiente ou enganoso",
-    "Experiência de usuário ruim"
-  ],
-  "Violação de Conteúdo/Produtos": [
-    "Violação de Conteúdo/Produtos"
-  ],
-  "Outro": [
-    "Outro"
+  [Platform.TIKTOK]: [
+    'Práticas de Negócios Inaceitáveis',
+    'Problemas com Pagamento / Saldo',
+    'Violação de Política de Criativos',
+    'Página de Destino (Landing Page) Irregular',
+    'Promoção de Produtos Proibidos',
+    'Conta Suspensa por Risco',
+    'Comportamento Fraudulento',
+    'Propriedade Intelectual'
   ]
 };
 
-const SectionDivider: React.FC<{ title: string }> = ({ title }) => (
-  <div className="flex items-center gap-4 my-6 opacity-60">
-    <div className="flex-1 h-[1px] bg-border"></div>
-    <span className="text-[9px] font-bold text-primary uppercase tracking-[0.2em]">{title}</span>
-    <div className="flex-1 h-[1px] bg-border"></div>
-  </div>
-);
-
 const Accounts: React.FC = () => {
-  const { profiles, scripts, removeProfile, canAddAccount, addProfile, updateAccount } = useAppStore(useShallow(s => ({
-    profiles: s.profiles ?? [],
-    scripts: s.scripts ?? [],
-    removeProfile: s.removeProfile,
-    canAddAccount: s.canAddAccount,
-    addProfile: s.addProfile,
-    updateAccount: s.updateAccount
-  })));
-  
-  const { canEdit, canDelete, user } = useAuth();
-  const [expandedProfiles, setExpandedProfiles] = useState<Set<string>>(new Set());
+  const [accounts, setAccounts] = useState<AdAccount[]>([]);
+  const [scripts, setScripts] = useState<Script[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   
-  const [blockCategory, setBlockCategory] = useState('');
-  const [blockSpecific, setBlockSpecific] = useState('');
+  // Drawer State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | 'view'>('create');
+  
+  // Form State
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<Platform>(Platform.GOOGLE);
+  const [accName, setAccName] = useState('');
+  const [accId, setAccId] = useState('');
+  
+  // Contingency State
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockReason, setBlockReason] = useState(SUSPENSION_REASONS[Platform.GOOGLE][0]);
+  const [appealScript, setAppealScript] = useState('');
+  
+  // Recovery Actions State
+  const [recoveryActions, setRecoveryActions] = useState<string[]>([]);
+  const [accountLogs, setAccountLogs] = useState<CaseLog[]>([]);
 
-  const [profileName, setProfileName] = useState('');
-  const [adsPowerId, setAdsPowerId] = useState('');
-  const [accountData, setAccountData] = useState<Partial<AdAccount>>({
-    customerId: '', email: '', password: '', status: 'ATIVA', tier: 'T1', proxy: '', domain: '',
-    razaoSocial: '', cardBank: '', cardHolderName: '', cardLastFour: '',
-    costGmail: 0, costDomain: 0, costProxy: 0, adsSpent: 0,
-    tipoConta: 'farmada', advertiserVerified: false, verificacaoG2: false,
-    alteracaoPerfil: false, alteracaoPagamento: false, notes: '',
-    dataContestacao: '', dataAtivacao: '', dataRecuperacao: '', blockReasons: [],
-    tipoScriptId: ''
-  });
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const updateField = (field: string, value: any) => {
-    setAccountData(prev => ({ ...prev, [field]: value }));
+  // Reset block reason when platform changes
+  useEffect(() => {
+    if (SUSPENSION_REASONS[platform]) {
+      setBlockReason(SUSPENSION_REASONS[platform][0]);
+    }
+  }, [platform]);
+
+  const loadData = async () => {
+    const accs = await db.data.getAccounts();
+    const scrs = await db.data.getScripts();
+    setAccounts([...accs]);
+    setScripts(scrs);
   };
 
-  const handleAddBlockReason = () => {
-    if (!blockSpecific) return;
-    const newReason: BlockReason = {
-      id: generateUUID(),
-      categoria: blockCategory,
-      motivo: blockSpecific,
-      createdAt: new Date().toISOString()
-    };
-    updateField('blockReasons', [...(accountData.blockReasons || []), newReason]);
-    setBlockSpecific('');
+  const resetForm = () => {
+    setPlatform(Platform.GOOGLE);
+    setAccName('');
+    setAccId('');
+    setIsBlocked(false);
+    // Set default reason based on default platform
+    setBlockReason(SUSPENSION_REASONS[Platform.GOOGLE][0]);
+    setAppealScript('');
+    setRecoveryActions([]);
+    setEditingAccountId(null);
   };
 
-  const handleRemoveBlockReason = (id: string) => {
-    updateField('blockReasons', (accountData.blockReasons || []).filter(r => r.id !== id));
+  const openCreateDrawer = () => {
+    resetForm();
+    setDrawerMode('create');
+    setIsDrawerOpen(true);
   };
 
-  const handleCreateProfile = () => {
-    if (!canAddAccount()) { alert("Limite de contas atingido."); return; }
-    setModalMode('create');
-    setProfileName('');
-    setAdsPowerId('');
-    setBlockCategory('');
-    setBlockSpecific('');
-    setAccountData({
-      customerId: '', email: '', password: '', status: 'ATIVA', tier: 'T1', proxy: '', domain: '',
-      razaoSocial: '', cardBank: '', cardHolderName: '', cardLastFour: '',
-      costGmail: 0, costDomain: 0, costProxy: 0, adsSpent: 0,
-      tipoConta: 'farmada', advertiserVerified: false, verificacaoG2: false,
-      alteracaoPerfil: false, alteracaoPagamento: false, notes: '',
-      dataContestacao: '', dataAtivacao: '', dataRecuperacao: '', blockReasons: [],
-      tipoScriptId: ''
-    });
-    setIsModalOpen(true);
+  const openEditDrawer = (acc: AdAccount) => {
+    setPlatform(acc.platform);
+    setAccName(acc.account_name);
+    setAccId(acc.account_id);
+    setEditingAccountId(acc.id);
+    setIsBlocked(acc.status === AccountStatus.DISABLED);
+    setDrawerMode('edit');
+    setIsDrawerOpen(true);
   };
 
-  const handleEditAccount = (profile: Profile, account: AdAccount) => {
-    setModalMode('edit');
-    setSelectedProfileId(profile.id);
-    setProfileName(profile.name);
-    setAdsPowerId(profile.adsPowerProfileId || '');
-    setAccountData({ ...account });
-    setIsModalOpen(true);
+  const openViewDrawer = (acc: AdAccount) => {
+    setPlatform(acc.platform);
+    setAccName(acc.account_name);
+    setAccId(acc.account_id);
+    setEditingAccountId(acc.id);
+    setDrawerMode('view');
+    setAccountLogs([
+      { id: '1', case_id: '1', user_id: '1', user_name: 'Sistema', action: 'Conta Criada', notes: 'Importação manual', created_at: acc.last_action_at || new Date().toISOString(), type: 'status_change' }
+    ]);
+    setIsDrawerOpen(true);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    
-    const investment = (Number(accountData.costGmail) || 0) + (Number(accountData.costDomain) || 0) + (Number(accountData.costProxy) || 0) + (Number(accountData.adsSpent) || 0);
-
-    const finalAccountData = {
-      ...accountData,
-      totalInvestment: investment,
-      updatedAt: new Date().toISOString(),
-      lastActionBy: user?.name || 'SISTEMA'
-    };
-
-    try {
-      if (modalMode === 'create') {
-        const newAccId = generateUUID();
-        await addProfile({ 
-          id: generateUUID(), 
-          name: profileName, 
-          adsPowerProfileId: adsPowerId, 
-          accounts: [{ ...finalAccountData, id: newAccId } as AdAccount], 
-          hasActiveAccounts: finalAccountData.status === 'ATIVA', 
-          totalSpent: investment 
-        });
-      } else if (selectedProfileId && accountData.id) {
-        await updateAccount(selectedProfileId, accountData.id, finalAccountData, profileName);
-      }
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao salvar dados.");
+  const handleDeleteAccount = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm('Tem certeza que deseja excluir este ativo? Todos os casos vinculados na War Room também serão removidos.')) {
+      await db.data.deleteAccount(id);
+      await loadData();
     }
   };
 
-  const totalInvestido = useMemo(() => {
-    return (Number(accountData.costGmail) || 0) + (Number(accountData.costDomain) || 0) + (Number(accountData.costProxy) || 0) + (Number(accountData.adsSpent) || 0);
-  }, [accountData.costGmail, accountData.costDomain, accountData.costProxy, accountData.adsSpent]);
+  const toggleRecoveryAction = (action: string) => {
+    if (recoveryActions.includes(action)) {
+      setRecoveryActions(recoveryActions.filter(a => a !== action));
+    } else {
+      setRecoveryActions([...recoveryActions, action]);
+    }
+  };
 
-  const selectedScriptName = useMemo(() => {
-    return scripts.find(s => s.id === accountData.tipoScriptId)?.title || null;
-  }, [accountData.tipoScriptId, scripts]);
-
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return null;
+  const handleSave = async () => {
+    if (!accName.trim() || !accId.trim()) return alert('ERRO: Preencha o Nome e o ID Operacional da conta.');
+    
     try {
-      const [year, month, day] = dateString.split('-');
-      return `${day}/${month}/${year}`;
-    } catch { return dateString; }
+      if (drawerMode === 'create') {
+        await db.data.createAccount({
+          platform,
+          name: accName,
+          accountId: accId,
+          isBlocked: isBlocked,
+          suspensionReason: isBlocked ? blockReason : undefined,
+          scriptContent: isBlocked ? appealScript : undefined,
+          recoveryActions: isBlocked ? recoveryActions : undefined
+        });
+        alert('ATIVO SINCRONIZADO: Conta criada e caso enviado para War Room com sucesso.');
+      } else if (drawerMode === 'edit' && editingAccountId) {
+        await db.data.updateAccount(editingAccountId, {
+          platform,
+          account_name: accName,
+          account_id: accId,
+          status: isBlocked ? AccountStatus.DISABLED : AccountStatus.ACTIVE
+        });
+        alert('ATIVO ATUALIZADO: Dados sincronizados.');
+      }
+
+      setIsDrawerOpen(false);
+      await loadData();
+    } catch (e) {
+      alert('Erro ao salvar no banco de dados.');
+    }
+  };
+
+  const filteredAccounts = accounts.filter(a => 
+    a.account_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    a.account_id.includes(searchTerm)
+  );
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    return `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-white mb-1 uppercase tracking-tight italic">GESTÃO DE ATIVOS</h2>
-          <p className="text-text-secondary text-xs italic">Controle de contingência em tempo real.</p>
+    <Layout>
+      <div className="flex flex-col h-[calc(100vh-100px)]">
+        
+        {/* Ops Title */}
+        <div className="flex items-end justify-between mb-8">
+          <div>
+            <h2 className="text-3xl font-black text-white tracking-tighter uppercase font-sans">INVENTÁRIO DE ATIVOS</h2>
+            <p className="text-xs font-bold text-indigo-400 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+               <TerminalSquare size={14} /> GESTÃO PROFISSIONAL DE GOOGLE ADS
+            </p>
+          </div>
+          <button 
+            onClick={openCreateDrawer} 
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-none skew-x-[-10deg] text-xs font-black uppercase tracking-wider transition-all shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_30px_rgba(99,102,241,0.5)] border border-indigo-400"
+          >
+            <span className="skew-x-[10deg] inline-block flex items-center gap-2">
+               <Plus size={14} /> Adicionar Ativo
+            </span>
+          </button>
         </div>
-        {canEdit && <Button onClick={handleCreateProfile} icon={Plus} className="shadow-glow-primary uppercase font-bold text-xs italic tracking-widest">ADICIONAR PERFIL</Button>}
-      </div>
 
-      <div className="flex gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" size={18} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome, email ou ID..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-background-secondary border border-border-input rounded-button pl-10 pr-4 py-2.5 text-sm text-white outline-none focus:ring-1 focus:ring-primary transition-all"
-          />
-        </div>
-        <Button variant="outline" icon={Filter} className="text-xs uppercase font-bold italic">Filtros</Button>
-      </div>
+        {/* Data Grid Container */}
+        <div className="flex-1 bg-[#0a0f1a] border border-white/10 rounded-lg overflow-hidden flex flex-col shadow-2xl relative">
+           
+           {/* Scanline decoration */}
+           <div className="absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50"></div>
 
-      <div className="bg-background-secondary border border-border-card rounded-card overflow-hidden shadow-card">
-         <div className="overflow-x-auto">
-           <table className="w-full text-left">
-             <thead className="bg-background-tertiary text-[10px] text-text-secondary uppercase font-bold border-b border-border">
-               <tr>
-                  <th className="py-4 px-6">Perfil / Infra</th>
-                  <th className="py-4 px-6">ID Conta</th>
-                  <th className="py-4 px-6 text-center">Investimento</th>
-                  <th className="py-4 px-6 text-center">Status</th>
-                  <th className="py-4 px-6 text-right">Ações</th>
-               </tr>
-             </thead>
-             <tbody className="divide-y divide-border">
-                {profiles.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-                  <React.Fragment key={p.id}>
-                    <tr className="hover:bg-background-cardHover cursor-pointer" onClick={() => {
-                       const newSet = new Set(expandedProfiles);
-                       if (newSet.has(p.id)) newSet.delete(p.id); else newSet.add(p.id);
-                       setExpandedProfiles(newSet);
-                    }}>
-                      <td className="py-4 px-6">
-                         <div className="flex items-center gap-3">
-                            {expandedProfiles.has(p.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary border border-primary/20">
-                               {p.name.substring(0,2).toUpperCase()}
-                            </div>
-                            <span className="font-bold text-white text-sm uppercase italic tracking-tighter">{p.name}</span>
-                         </div>
-                      </td>
-                      <td className="py-4 px-6 text-xs text-text-secondary font-mono">{p.accounts?.[0]?.customerId || '---'}</td>
-                      <td className="py-4 px-6 text-center font-bold text-white text-sm">R$ {(p.totalSpent || 0).toFixed(2)}</td>
-                      <td className="py-4 px-6 text-center"><Badge status={p.accounts?.[0]?.status || 'ATIVA'} /></td>
-                      <td className="py-4 px-6 text-right">
-                         <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); handleEditAccount(p, p.accounts[0]); }} className="text-[10px] font-bold uppercase italic">GERENCIAR</Button>
-                      </td>
-                    </tr>
-                    {expandedProfiles.has(p.id) && (p.accounts || []).map(acc => (
-                       <tr key={acc.id} className="bg-background-tertiary/5 text-xs border-l-2 border-primary" onClick={() => handleEditAccount(p, acc)}>
-                          <td className="py-3 px-6 pl-16">
-                             <div className="flex items-center gap-2">
-                                <Globe size={12} className="text-text-tertiary" />
-                                <span className="text-text-tertiary font-mono">{acc.proxy || 'N/A'}</span>
-                             </div>
-                          </td>
-                          <td className="py-3 px-6 text-text-tertiary font-mono">{acc.customerId}</td>
-                          <td className="py-3 px-6 text-center text-danger font-bold">R$ {(acc.totalInvestment || 0).toFixed(2)}</td>
-                          <td className="py-3 px-6 text-center"><Badge status={acc.status} /></td>
-                          <td className="py-3 px-6 text-right">
-                             {canDelete && <button onClick={(e) => { e.stopPropagation(); removeProfile(p.id); }} className="text-text-tertiary hover:text-danger p-1"><Trash2 size={14}/></button>}
-                          </td>
-                       </tr>
-                    ))}
-                  </React.Fragment>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#0f1623] text-[10px] uppercase tracking-[0.15em] text-slate-400 font-bold border-b border-white/5">
+                  <th className="px-6 py-5">Nome Conta</th>
+                  <th className="px-6 py-5">ID Operacional</th>
+                  <th className="px-6 py-5"><span className="bg-indigo-900/40 text-indigo-300 px-2 py-1 rounded">Tipo Contestação</span></th>
+                  <th className="px-6 py-5"><span className="bg-indigo-900/40 text-indigo-300 px-2 py-1 rounded">Status</span></th>
+                  <th className="px-6 py-5">Data/Hora</th>
+                  <th className="px-6 py-5 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredAccounts.map((acc) => (
+                  <tr key={acc.id} className="hover:bg-white/5 transition-colors cursor-pointer group" onClick={() => openViewDrawer(acc)}>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                         <div className={`w-2 h-2 rounded-full ${acc.platform === Platform.GOOGLE ? 'bg-blue-500' : acc.platform === Platform.META ? 'bg-blue-400' : 'bg-pink-500'}`}></div>
+                         <span className="font-bold text-slate-200 text-sm">{acc.account_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="font-mono text-xs text-slate-500 tracking-wider text-indigo-300">{acc.account_id}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          {acc.status === AccountStatus.DISABLED ? 'Bloqueio Nível 1' : 'N/A'}
+                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {acc.status === AccountStatus.ACTIVE && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-sm bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/20">Ativo</span>}
+                      {acc.status === AccountStatus.DISABLED && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 text-red-500 text-[10px] font-bold uppercase tracking-wider border border-red-500/20">Bloqueado</span>}
+                      {acc.status === AccountStatus.RESTRICTED && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-sm bg-amber-500/10 text-amber-500 text-[10px] font-bold uppercase tracking-wider border border-amber-500/20">Restrito</span>}
+                    </td>
+                    <td className="px-6 py-4">
+                       <span className="font-mono text-[10px] text-slate-500">{formatDate(acc.last_action_at)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                       <div className="flex items-center justify-end gap-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => { e.stopPropagation(); openEditDrawer(acc); }} className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-white"><Edit size={14} /></button>
+                          <button onClick={(e) => handleDeleteAccount(acc.id, e)} className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-red-400"><Trash2 size={14} /></button>
+                       </div>
+                    </td>
+                  </tr>
                 ))}
-             </tbody>
-           </table>
-         </div>
-      </div>
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalMode === 'create' ? 'NOVO PERFIL' : 'EDITAR PERFIL'} size="xl">
-        <div className="flex flex-col lg:flex-row gap-8 relative h-full pb-20">
-          {/* LADO ESQUERDO: FORMULÁRIO */}
-          <div className="flex-1 space-y-4 overflow-y-auto pr-2 custom-scrollbar">
-            <SectionDivider title="IDS" />
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="NOME DO PERFIL (GMAIL)" value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Ex: ADSPOWER 01" />
-              <Input label="ID ADSPOWER (PERFIL)" value={adsPowerId} onChange={e => setAdsPowerId(e.target.value)} placeholder="adspower-xx" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Input label="EMAIL GOOGLE ADS" icon={Mail} value={accountData.email} onChange={e => updateField('email', e.target.value)} placeholder="email@gmail.com" />
-              <Input label="SENHA GOOGLE ADS" icon={Lock} type="password" value={accountData.password} onChange={e => updateField('password', e.target.value)} placeholder="••••••••" />
-            </div>
-            <Input label="ID DA CONTA (GOOGLE ADS)" value={accountData.customerId} onChange={e => updateField('customerId', e.target.value)} placeholder="000-000-0000" />
+              </tbody>
+            </table>
             
-            <SectionDivider title="CONTA" />
-            <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase">TIPO DA CONTA</label>
-                  <select className="w-full bg-background-primary border border-border-input rounded-button px-4 py-2.5 text-sm text-white outline-none" value={accountData.tipoConta} onChange={e => updateField('tipoConta', e.target.value)}>
-                    <option value="farmada">Farmada Própria</option>
-                    <option value="comprada">Comprada</option>
-                  </select>
-               </div>
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase text-center block w-full">TIER DA CONTA</label>
-                  <div className="flex gap-1">
-                    {['T1', 'T2', 'T3', 'T4'].map(t => (
-                      <button key={t} type="button" onClick={() => updateField('tier', t)} className={`flex-1 py-2 text-xs font-bold rounded transition-all ${accountData.tier === t ? 'bg-primary text-white shadow-glow-primary' : 'bg-background-tertiary text-text-tertiary border border-border hover:border-text-secondary'}`}>{t}</button>
-                    ))}
-                  </div>
-               </div>
-            </div>
-
-            <div className="space-y-2 mt-4">
-               <label className="text-[10px] font-bold text-text-secondary uppercase block">DEFINIR STATUS</label>
-               <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={() => updateField('status', 'ATIVA')} className={`py-3 text-[10px] font-bold rounded-lg uppercase tracking-widest italic transition-all ${accountData.status === 'ATIVA' ? 'bg-success text-black shadow-glow-success' : 'bg-background-tertiary text-text-tertiary border border-border hover:border-text-secondary'}`}>ATIVA</button>
-                  <button type="button" onClick={() => updateField('status', 'CONTESTADA')} className={`py-3 text-[10px] font-bold rounded-lg uppercase tracking-widest italic transition-all ${accountData.status === 'CONTESTADA' ? 'bg-contestada text-white shadow-glow-warning' : 'bg-background-tertiary text-text-tertiary border border-border hover:border-text-secondary'}`}>CONTESTADA</button>
-                  <button type="button" onClick={() => updateField('status', 'RECUPERADA')} className={`py-3 text-[10px] font-bold rounded-lg uppercase tracking-widest italic transition-all ${accountData.status === 'RECUPERADA' ? 'bg-recuperada text-white shadow-glow-primary' : 'bg-background-tertiary text-text-tertiary border border-border hover:border-text-secondary'}`}>RECUPERADA</button>
-               </div>
-            </div>
-
-            <SectionDivider title="MODELO DE SCRIPT" />
-            <div className="space-y-1.5">
-               <label className="text-[10px] font-bold text-text-secondary uppercase">VINCULAR SCRIPT DE TRACKING</label>
-               <select className="w-full bg-background-primary border border-border-input rounded-button px-4 py-2.5 text-sm text-white outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer" value={accountData.tipoScriptId} onChange={e => updateField('tipoScriptId', e.target.value)}>
-                  <option value="">Selecione um modelo...</option>
-                  {['FRAUDE', 'COMERCIAL', 'VERIFICACAO', 'OUTROS'].map(cat => {
-                    const catScripts = scripts.filter(s => s.category === cat);
-                    if (catScripts.length === 0) return null;
-                    return (
-                      <optgroup key={cat} label={cat} className="bg-background-modal text-primary font-bold">
-                        {catScripts.map(s => <option key={s.id} value={s.id} className="bg-background-primary text-white font-normal">{s.title}</option>)}
-                      </optgroup>
-                    );
-                  })}
-               </select>
-            </div>
-
-            <SectionDivider title="INFRAESTRUTURA" />
-            <div className="grid grid-cols-2 gap-4">
-               <Input label="PROXY (IP:PORT)" icon={Globe} value={accountData.proxy} onChange={e => updateField('proxy', e.target.value)} placeholder="127.0.0.1:8080" />
-               <Input label="DOMÍNIO(S)" icon={Server} value={accountData.domain} onChange={e => updateField('domain', e.target.value)} placeholder="meusite.com" />
-            </div>
-
-            <SectionDivider title="FINANCEIRO" />
-            <div className="grid grid-cols-2 gap-4">
-               <Input label="RAZÃO SOCIAL / NOME EMPRESA" value={accountData.razaoSocial} onChange={e => updateField('razaoSocial', e.target.value)} placeholder="Minha Empresa Ltda" />
-               <Input label="BANCO EMISSOR" icon={CreditCard} value={accountData.cardBank} onChange={e => updateField('cardBank', e.target.value)} placeholder="Nubank" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-               <Input label="NOME TITULAR" value={accountData.cardHolderName} onChange={e => updateField('cardHolderName', e.target.value)} placeholder="JOÃO SILVA" />
-               <Input label="FINAL 4 DÍGITOS" value={accountData.cardLastFour} onChange={e => updateField('cardLastFour', e.target.value)} placeholder="1234" />
-            </div>
-            
-            <div className="grid grid-cols-4 gap-2 bg-background-tertiary/20 p-4 rounded-xl border border-border mt-4">
-               <Input label="CUSTO GMAIL" type="number" value={accountData.costGmail} onChange={e => updateField('costGmail', Number(e.target.value))} />
-               <Input label="CUSTO DOMÍNIO" type="number" value={accountData.costDomain} onChange={e => updateField('costDomain', Number(e.target.value))} />
-               <Input label="CUSTO PROXY" type="number" value={accountData.costProxy} onChange={e => updateField('costProxy', Number(e.target.value))} />
-               <Input label="GASTO ADS" type="number" value={accountData.adsSpent} onChange={e => updateField('adsSpent', Number(e.target.value))} />
-            </div>
-
-            <SectionDivider title="BLOQUEIO" />
-            <div className="flex gap-2 items-end">
-               <div className="flex-1 space-y-1.5">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase">CATEGORIA</label>
-                  <select className="w-full bg-background-primary border border-border-input rounded-button px-4 py-2.5 text-sm text-white outline-none cursor-pointer" value={blockCategory} onChange={e => { setBlockCategory(e.target.value); setBlockSpecific(''); }}>
-                     <option value="">Selecione...</option>
-                     {Object.keys(BLOCK_REASONS_HIERARCHY).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-               </div>
-               <div className="flex-1 space-y-1.5">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase">MOTIVO ESPECÍFICO</label>
-                  <select className="w-full bg-background-primary border border-border-input rounded-button px-4 py-2.5 text-sm text-white outline-none cursor-pointer" disabled={!blockCategory} value={blockSpecific} onChange={e => setBlockSpecific(e.target.value)}>
-                     <option value="">Selecione...</option>
-                     {blockCategory && BLOCK_REASONS_HIERARCHY[blockCategory].map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-               </div>
-               <button type="button" onClick={handleAddBlockReason} disabled={!blockSpecific} className="h-10 w-10 bg-primary rounded-button flex items-center justify-center text-white disabled:opacity-30 transition-all hover:bg-primary-hover"><Plus size={20} /></button>
-            </div>
-            <div className="p-4 bg-background-primary/50 border border-border rounded min-h-[80px]">
-               <label className="text-[9px] font-bold text-text-tertiary uppercase block mb-2">MOTIVOS SELECIONADOS:</label>
-               <div className="flex flex-wrap gap-2">
-                 {(accountData.blockReasons || []).length === 0 ? <span className="text-[10px] text-text-muted italic opacity-50">Nenhum motivo registrado.</span> : 
-                  accountData.blockReasons?.map(r => <span key={r.id} className="bg-danger/10 border border-danger/20 text-danger-alt px-2 py-1 rounded text-[10px] font-bold flex items-center gap-2 group">{r.motivo}<button type="button" onClick={() => handleRemoveBlockReason(r.id)}><X size={12}/></button></span>)}
-               </div>
-            </div>
-
-            <SectionDivider title="ALTERAÇÕES" />
-            <div className="grid grid-cols-2 gap-4">
-               <Toggle label="ALTERAÇÃO PERFIL" checked={!!accountData.alteracaoPerfil} onChange={val => updateField('alteracaoPerfil', val)} />
-               <Toggle label="PAGAMENTO" checked={!!accountData.alteracaoPagamento} onChange={val => updateField('alteracaoPagamento', val)} />
-            </div>
-
-            <SectionDivider title="VERIFICAÇÕES" />
-            <div className="grid grid-cols-2 gap-4">
-               <Toggle label="VERIFICAÇÃO DE ANUNCIANTE CONCLUÍDA" checked={!!accountData.advertiserVerified} onChange={val => updateField('advertiserVerified', val)} />
-               <Toggle label="VERIFICAÇÃO G2 (FINANCEIRO)" checked={!!accountData.verificacaoG2} onChange={val => updateField('verificacaoG2', val)} />
-            </div>
-
-            <SectionDivider title="OBSERVAÇÕES" />
-            <div className="grid grid-cols-3 gap-2">
-               <Input label="DATA DE CONTESTAÇÃO" type="date" value={accountData.dataContestacao || ''} onChange={e => updateField('dataContestacao', e.target.value)} icon={Calendar} />
-               <Input label="DATA DE ATIVAÇÃO" type="date" value={accountData.dataAtivacao || ''} onChange={e => updateField('dataAtivacao', e.target.value)} icon={Calendar} />
-               <Input label="DATA DE RECUPERAÇÃO" type="date" value={accountData.dataRecuperacao || ''} onChange={e => updateField('dataRecuperacao', e.target.value)} icon={Calendar} />
-            </div>
-            <Textarea label="OBSERVAÇÕES & TAGS" value={accountData.notes} onChange={e => updateField('notes', e.target.value)} placeholder="Anotações sobre o ID..." />
-
-            <div className="flex gap-4 pt-10 sticky bottom-0 bg-background-modal py-4 border-t border-border/50 z-20">
-              <Button onClick={handleSave} className="flex-1 py-4 text-xs font-black uppercase italic tracking-widest shadow-glow-primary">SALVAR DADOS</Button>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-text-tertiary hover:text-white text-[10px] font-black uppercase tracking-widest transition-colors">CANCELAR</button>
-            </div>
-          </div>
-
-          {/* LADO DIREITO: RESUMO DO ID (DINÂMICO) */}
-          <div className="w-full lg:w-[320px] shrink-0 sticky top-0 h-fit animate-in slide-up">
-            <div className="bg-background-tertiary/40 border border-border rounded-modal p-6 space-y-4 shadow-2xl relative overflow-hidden group">
-               <div className="absolute top-0 left-0 w-1 h-full bg-primary/40 group-hover:bg-primary transition-colors"></div>
-               <div className="flex items-center gap-2 mb-2 border-b border-border/50 pb-3">
-                 <AlertCircle className="text-primary" size={18} />
-                 <h3 className="text-sm font-black text-white uppercase italic tracking-tighter">RESUMO DO ID</h3>
-               </div>
-               
-               <div className="space-y-0.5">
-                 <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">IS ATIVO</p>
-                 <p className="text-xs font-bold text-white italic truncate">{accountData.customerId || 'Aguardando preenchimento...'}</p>
-               </div>
-
-               <div className="grid grid-cols-2 gap-4 border-t border-border/10 pt-2">
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">CONTA</p>
-                   <p className="text-[10px] text-text-secondary truncate">{accountData.customerId || 'N/A'}</p>
+            {/* Empty State */}
+            {filteredAccounts.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-64 border-t border-white/5">
+                 <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-700 mb-4">
+                    <CreditCard size={32} />
                  </div>
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">EMAIL</p>
-                   <p className="text-[10px] text-text-secondary truncate">{accountData.email || 'N/A'}</p>
-                 </div>
-               </div>
-
-               <div className="grid grid-cols-2 gap-4 border-t border-border/10 pt-2">
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">PROXY</p>
-                   <p className="text-[10px] text-text-secondary truncate font-mono">{accountData.proxy || 'N/A'}</p>
-                 </div>
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">DOMINIO</p>
-                   <p className="text-[10px] text-text-secondary truncate">{accountData.domain || 'N/A'}</p>
-                 </div>
-               </div>
-
-               <div className="grid grid-cols-2 gap-4 border-t border-border/10 pt-2">
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">BANCO</p>
-                   <p className="text-[10px] text-text-secondary truncate">{accountData.cardBank || 'N/A'}</p>
-                 </div>
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">TITULAR</p>
-                   <p className="text-[10px] text-text-secondary truncate">{accountData.cardHolderName || 'N/A'}</p>
-                 </div>
-               </div>
-
-               <div className="space-y-1 pt-2 border-t border-border/30">
-                 <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">INVESTIDO</p>
-                 <p className="text-2xl font-black text-success shadow-glow-success-muted">R$ {totalInvestido.toFixed(2)}</p>
-               </div>
-
-               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/10">
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">STATUS</p>
-                   <Badge status={accountData.status || 'ATIVA'}>{accountData.status}</Badge>
-                 </div>
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">TIPO</p>
-                   <p className="text-[10px] font-bold text-white uppercase italic">{accountData.tipoConta || 'FARMADA'}</p>
-                 </div>
-               </div>
-
-               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/10">
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">TIER</p>
-                   <Badge status={accountData.tier || 'T1'}>{accountData.tier}</Badge>
-                 </div>
-                 <div className="space-y-0.5">
-                   <p className="text-[9px] text-primary uppercase font-bold tracking-widest flex items-center gap-1"><UserCheck size={10} /> OPERADOR</p>
-                   <p className="text-[10px] font-bold text-white uppercase italic">SISTEMA</p>
-                 </div>
-               </div>
-
-               {/* SEÇÃO DINÂMICA: MODELO DE SCRIPT */}
-               {selectedScriptName && (
-                 <div className="space-y-2 pt-3 border-t border-border/10">
-                    <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">📋 MODELO DE SCRIPT</p>
-                    <div className="p-2 bg-primary/5 border border-primary/20 rounded-lg">
-                       <p className="text-[10px] font-bold text-white uppercase italic flex items-center gap-2"><FileCode size={12} className="text-primary"/> {selectedScriptName}</p>
-                    </div>
-                 </div>
-               )}
-
-               {/* SEÇÃO DINÂMICA: MOTIVOS DE BLOQUEIO */}
-               {accountData.blockReasons && accountData.blockReasons.length > 0 && (
-                 <div className="space-y-2 pt-3 border-t border-border/10">
-                    <p className="text-[9px] text-danger uppercase font-bold tracking-widest">🚫 MOTIVOS DE BLOQUEIO</p>
-                    <div className="flex flex-col gap-1.5">
-                       {accountData.blockReasons.map(r => (
-                         <div key={r.id} className="p-2 bg-danger/5 border border-danger/10 rounded text-[9px] text-danger-alt font-medium leading-tight flex items-start gap-2">
-                           <span className="mt-0.5">•</span>
-                           <span><span className="font-black">{r.categoria}:</span> {r.motivo}</span>
-                         </div>
-                       ))}
-                    </div>
-                 </div>
-               )}
-
-               {/* SEÇÃO DINÂMICA: DATAS (COLORIDAS) */}
-               {(accountData.dataContestacao || accountData.dataAtivacao || accountData.dataRecuperacao) && (
-                 <div className="pt-3 border-t border-border/10 space-y-2">
-                    <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest flex items-center gap-1"><Calendar size={10}/> HISTÓRICO DE DATAS</p>
-                    <div className="flex flex-col gap-2">
-                       {accountData.dataContestacao && (
-                         <div className="flex justify-between items-center bg-warning/5 p-2 rounded border border-warning/10">
-                            <span className="text-[8px] font-bold text-warning uppercase">CONTESTAÇÃO:</span>
-                            <span className="text-[10px] font-bold text-white font-mono">{formatDate(accountData.dataContestacao)}</span>
-                         </div>
-                       )}
-                       {accountData.dataAtivacao && (
-                         <div className="flex justify-between items-center bg-success/5 p-2 rounded border border-success/10">
-                            <span className="text-[8px] font-bold text-success uppercase">ATIVAÇÃO:</span>
-                            <span className="text-[10px] font-bold text-white font-mono">{formatDate(accountData.dataAtivacao)}</span>
-                         </div>
-                       )}
-                       {accountData.dataRecuperacao && (
-                         <div className="flex justify-between items-center bg-primary/5 p-2 rounded border border-primary/10">
-                            <span className="text-[8px] font-bold text-primary uppercase">RECUPERAÇÃO:</span>
-                            <span className="text-[10px] font-bold text-white font-mono">{formatDate(accountData.dataRecuperacao)}</span>
-                         </div>
-                       )}
-                    </div>
-                 </div>
-               )}
-
-               <div className="pt-4 border-t border-border/30 space-y-2">
-                  <p className="text-[9px] text-text-tertiary uppercase font-bold tracking-widest">VERIFICAÇÕES</p>
-                  <div className="flex flex-col gap-2">
-                    <div className={`flex items-center gap-2 text-[10px] font-bold p-2 rounded transition-colors ${accountData.advertiserVerified ? 'bg-success/5 text-success' : 'bg-background-tertiary/20 text-text-muted opacity-40'}`}>
-                      {accountData.advertiserVerified ? <CheckCircle size={14}/> : <X size={14}/>}
-                      ANUNCIANTE GOOGLE
-                    </div>
-                    <div className={`flex items-center gap-2 text-[10px] font-bold p-2 rounded transition-colors ${accountData.verificacaoG2 ? 'bg-success/5 text-success' : 'bg-background-tertiary/20 text-text-muted opacity-40'}`}>
-                      {accountData.verificacaoG2 ? <ShieldCheck size={14}/> : <X size={14}/>}
-                      VERIFICAÇÃO G2
-                    </div>
-                  </div>
-               </div>
-            </div>
+                 <h3 className="text-sm font-bold text-slate-600 uppercase tracking-[0.2em]">Inventário Vazio no Banco</h3>
+              </div>
+            )}
           </div>
         </div>
-      </Modal>
+      </div>
 
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #374151; }
-        .shadow-glow-success-muted { text-shadow: 0 0 10px rgba(0, 255, 136, 0.4); }
-      `}</style>
-    </div>
+      {/* DRAWER */}
+      {isDrawerOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40" onClick={() => setIsDrawerOpen(false)}></div>
+          <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-[#080c14] border-l border-white/10 shadow-2xl z-50 flex flex-col">
+            <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-[#050b14]">
+              <h3 className="text-lg font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                 <TerminalSquare size={18} className="text-indigo-500"/>
+                 {drawerMode === 'create' ? 'NOVO ATIVO' : 'DETALHES DO ATIVO'}
+              </h3>
+              <button onClick={() => setIsDrawerOpen(false)} className="text-slate-500 hover:text-white p-2"><X size={24} /></button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+               {(drawerMode === 'create' || drawerMode === 'edit') ? (
+                  <div className="space-y-8">
+                     <div>
+                        <label className="block text-[10px] font-bold text-indigo-400 mb-3 uppercase tracking-widest">Plataforma</label>
+                        <div className="grid grid-cols-3 gap-3">
+                           {Object.values(Platform).map(p => (
+                             <button key={p} onClick={() => setPlatform(p)} className={`py-4 border border-white/10 bg-slate-900/50 text-slate-500 text-xs font-bold uppercase tracking-wider hover:bg-white/5 ${platform === p ? 'border-indigo-500 text-white bg-indigo-500/10' : ''}`}>
+                                {p}
+                             </button>
+                           ))}
+                        </div>
+                     </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">Nome da Conta</label>
+                           <input type="text" className="w-full bg-[#0a0f1a] border border-white/10 p-3 text-white text-sm focus:border-indigo-500 outline-none placeholder:text-slate-700" value={accName} onChange={e => setAccName(e.target.value)} placeholder="IDENTIFICADOR" />
+                        </div>
+                        <div>
+                           <label className="block text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-widest">ID Operacional</label>
+                           <input type="text" className="w-full bg-[#0a0f1a] border border-white/10 p-3 text-white text-sm font-mono focus:border-indigo-500 outline-none placeholder:text-slate-700" value={accId} onChange={e => setAccId(e.target.value)} placeholder="000-000-0000" />
+                        </div>
+                     </div>
+                     <div className="pt-4 border-t border-white/5">
+                        <div className="flex items-center gap-3 cursor-pointer mb-6" onClick={() => setIsBlocked(!isBlocked)}>
+                           <div className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isBlocked ? 'bg-red-900' : 'bg-slate-800'}`}>
+                              <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform ${isBlocked ? 'translate-x-5 bg-red-500' : 'bg-slate-400'}`}></div>
+                           </div>
+                           <span className={`text-xs font-bold uppercase tracking-wider ${isBlocked ? 'text-red-500' : 'text-slate-500'}`}>
+                              {isBlocked ? 'Status: BLOQUEADO' : 'Status: OPERACIONAL'}
+                           </span>
+                        </div>
+
+                        {isBlocked && (
+                           <div className="space-y-6 animate-in fade-in slide-in-from-top-2 border border-red-500/20 bg-red-500/5 p-4 rounded">
+                              <div>
+                                 <label className="text-[10px] text-red-400 mb-2 block font-bold uppercase tracking-widest">Motivo do Bloqueio</label>
+                                 <select className="w-full bg-[#050b14] border border-red-900/30 p-3 text-white text-sm focus:border-red-500 outline-none" value={blockReason} onChange={e => setBlockReason(e.target.value)}>
+                                   {SUSPENSION_REASONS[platform].map(reason => (
+                                     <option key={reason} value={reason}>{reason}</option>
+                                   ))}
+                                 </select>
+                              </div>
+
+                              <div>
+                                 <label className="text-[10px] text-indigo-400 mb-2 block font-bold uppercase tracking-widest">Script Enviado (Opcional)</label>
+                                 
+                                  <div className="flex gap-2 mb-2 overflow-x-auto pb-1 no-scrollbar">
+                                    {scripts.filter(s => s.platform === platform).slice(0, 3).map(s => (
+                                       <button 
+                                         key={s.id}
+                                         onClick={() => setAppealScript(s.content)}
+                                         className="text-[9px] px-2 py-1 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 text-slate-300 whitespace-nowrap uppercase tracking-wider"
+                                       >
+                                          {s.title}
+                                       </button>
+                                    ))}
+                                 </div>
+
+                                 <textarea 
+                                    className="w-full bg-[#050b14] border border-white/10 p-3 text-white text-xs font-mono focus:border-indigo-500 outline-none h-24"
+                                    value={appealScript}
+                                    onChange={e => setAppealScript(e.target.value)}
+                                    placeholder="Cole o script utilizado aqui para sincronizar com a War Room..."
+                                 ></textarea>
+                              </div>
+
+                              <div className="space-y-2">
+                                 <label className="text-[10px] text-slate-500 block font-bold uppercase tracking-widest mb-2">Ações Realizadas</label>
+                                 {['Alteração de Perfil de Pagamento', 'Troca de Cartão de Crédito', 'Aquecimento de Perfil'].map(action => (
+                                    <label key={action} className="flex items-center gap-3 cursor-pointer group">
+                                       <div className={`w-4 h-4 border flex items-center justify-center ${recoveryActions.includes(action) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-700'}`}>
+                                          {recoveryActions.includes(action) && <CheckCircle2 size={10} className="text-white"/>}
+                                       </div>
+                                       <input type="checkbox" className="hidden" onChange={() => toggleRecoveryAction(action)}/>
+                                       <span className="text-xs text-slate-400 uppercase">{action}</span>
+                                    </label>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                     </div>
+                  </div>
+               ) : (
+                  <div className="text-center py-10">
+                     <div className="inline-block p-4 rounded-full bg-indigo-500/10 text-indigo-500 mb-4"><TerminalSquare size={32}/></div>
+                     <h2 className="text-2xl font-bold text-white uppercase tracking-wider">{accName}</h2>
+                     <p className="font-mono text-slate-500 mt-2">{accId}</p>
+                     <div className="mt-8 border-t border-white/5 pt-8 text-left">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Logs do Sistema</h4>
+                        {accountLogs.map(log => (
+                           <div key={log.id} className="mb-4 pl-4 border-l border-white/10">
+                              <p className="text-xs text-indigo-400 font-bold uppercase">{log.action}</p>
+                              <p className="text-[10px] text-slate-500 font-mono mt-1">{new Date(log.created_at).toLocaleString()}</p>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               )}
+            </div>
+
+            {(drawerMode === 'create' || drawerMode === 'edit') && (
+               <div className="p-6 border-t border-white/5 bg-[#050b14]">
+                  <button onClick={handleSave} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-4 font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 transition-all">
+                     <Save size={16} /> {drawerMode === 'create' ? 'SALVAR E SINCRONIZAR' : 'ATUALIZAR DADOS'}
+                  </button>
+               </div>
+            )}
+          </div>
+        </>
+      )}
+    </Layout>
   );
 };
 
