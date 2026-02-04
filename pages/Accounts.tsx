@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { db } from '../services/db';
-import { AdAccount, Platform, AccountStatus, Script, CaseLog } from '../types';
+import { accountsService } from '../services/accountsService';
+import { scriptsService } from '../services/scriptsService';
+import { AdAccount, Platform, Script, CaseLog } from '../types';
 import {
   Plus,
-  X,
-  CheckCircle2,
   Trash2,
   Edit,
   Save,
-  CreditCard,
-  TerminalSquare
+  CreditCard
 } from 'lucide-react';
 
 const Accounts: React.FC = () => {
@@ -18,24 +16,23 @@ const Accounts: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | 'view'>('create');
+  const [drawerMode, setDrawerMode] = useState<'create' | 'edit'>('create');
 
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [platform, setPlatform] = useState<Platform>(Platform.GOOGLE);
   const [accName, setAccName] = useState('');
   const [accId, setAccId] = useState('');
 
-  const [accountLogs, setAccountLogs] = useState<CaseLog[]>([]);
-
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-    const accs = await db.data.getAccounts();
-    const scrs = await db.data.getScripts();
-    setAccounts([...accs]);
-    setScripts(scrs);
+    const accs = await accountsService.getAll();
+    const scrs = await scriptsService.getAll();
+
+    setAccounts(accs || []);
+    setScripts(scrs || []);
   };
 
   const openCreateDrawer = () => {
@@ -54,9 +51,8 @@ const Accounts: React.FC = () => {
     setIsDrawerOpen(true);
   };
 
-  const handleDeleteAccount = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await db.data.deleteAccount(id);
+  const handleDeleteAccount = async (id: string) => {
+    await accountsService.delete(id);
     await loadData();
   };
 
@@ -64,15 +60,15 @@ const Accounts: React.FC = () => {
     if (!accName || !accId) return;
 
     if (drawerMode === 'create') {
-      await db.data.createAccount({
+      await accountsService.create({
         platform,
-        name: accName,
-        accountId: accId
+        account_name: accName,
+        account_id: accId
       });
     }
 
     if (drawerMode === 'edit' && editingAccountId) {
-      await db.data.updateAccount(editingAccountId, {
+      await accountsService.update(editingAccountId, {
         account_name: accName,
         account_id: accId
       });
@@ -83,13 +79,12 @@ const Accounts: React.FC = () => {
   };
 
   const filteredAccounts = accounts.filter(a =>
-    a.account_name.toLowerCase().includes(searchTerm.toLowerCase())
+    a.account_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <div className="flex flex-col h-screen p-8 bg-[#0a0f1a] text-white">
 
-      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold uppercase">Inventário de Ativos</h1>
 
@@ -101,7 +96,6 @@ const Accounts: React.FC = () => {
         </button>
       </div>
 
-      {/* TABLE */}
       <div className="border border-white/10 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-black/40">
@@ -122,7 +116,7 @@ const Accounts: React.FC = () => {
                     <Edit size={14} />
                   </button>
 
-                  <button onClick={(e) => handleDeleteAccount(acc.id, e)}>
+                  <button onClick={() => handleDeleteAccount(acc.id)}>
                     <Trash2 size={14} />
                   </button>
                 </td>
@@ -139,7 +133,6 @@ const Accounts: React.FC = () => {
         )}
       </div>
 
-      {/* DRAWER */}
       {isDrawerOpen && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center">
           <div className="bg-[#111] p-6 w-[400px] rounded-lg space-y-4">

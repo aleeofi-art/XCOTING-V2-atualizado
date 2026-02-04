@@ -1,144 +1,53 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>XCoting - Ads Management</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              background: {
-                primary: '#0A0E1A',
-                secondary: '#0F1419',
-                card: '#141B2D',
-                cardHover: '#1A2332',
-                modal: '#0D1117',
-                tertiary: '#1A2332',
-              },
-              primary: {
-                DEFAULT: '#6366F1',
-                hover: '#5558E3',
-                light: '#7C7FF5',
-                dark: '#4F52D9',
-              },
-              success: {
-                DEFAULT: '#00FF88',
-                muted: '#10B981',
-              },
-              warning: {
-                DEFAULT: '#F59E0B',
-                alt: '#FFA500',
-                dark: '#D97706',
-              },
-              danger: {
-                DEFAULT: '#EF4444',
-                alt: '#FF4444',
-              },
-              contestada: {
-                DEFAULT: '#FF6B00',
-                light: '#FF8534',
-              },
-              recuperada: {
-                DEFAULT: '#3B82F6',
-              },
-              text: {
-                primary: '#FFFFFF',
-                secondary: '#9CA3AF',
-                tertiary: '#6B7280',
-                muted: '#4B5563',
-                disabled: '#374151',
-              },
-              border: {
-                DEFAULT: '#1F2937',
-                card: '#2D3748',
-                input: '#374151',
-                focus: '#6366F1',
-              },
-              live: '#DC2626',
-            },
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-            },
-            boxShadow: {
-              'card': '0 4px 6px -1px rgba(0, 0, 0, 0.3)',
-              'card-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
-              'glow-primary': '0 0 20px rgba(99, 102, 241, 0.3)',
-              'glow-success': '0 0 20px rgba(0, 255, 136, 0.3)',
-              'glow-warning': '0 0 20px rgba(255, 107, 0, 0.3)',
-            },
-            borderRadius: {
-              'card': '12px',
-              'button': '8px',
-              'badge': '6px',
-              'modal': '16px',
-            },
-            animation: {
-              'pulse-live': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              'fade-in': 'fadeIn 0.2s ease-in',
-              'slide-up': 'slideUp 0.3s ease-out',
-            },
-            keyframes: {
-              fadeIn: {
-                '0%': { opacity: '0' },
-                '100%': { opacity: '1' },
-              },
-              slideUp: {
-                '0%': { transform: 'translateY(10px)', opacity: '0' },
-                '100%': { transform: 'translateY(0)', opacity: '1' },
-              },
-            },
-          },
-        },
-      };
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <title>XCoting • Ads Management</title>
+
+    <!-- Fonte -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- CSS principal do Vite -->
+    <link rel="stylesheet" href="/src/index.css" />
+
     <style>
       body {
         font-family: 'Inter', sans-serif;
         background-color: #0A0E1A;
         color: #FFFFFF;
+        margin: 0;
       }
+
+      /* Scrollbar clean */
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
       }
+
       ::-webkit-scrollbar-track {
-        background: #0A0E1A; 
+        background: #0A0E1A;
       }
+
       ::-webkit-scrollbar-thumb {
-        background: #1F2937; 
+        background: #1F2937;
         border-radius: 4px;
       }
+
       ::-webkit-scrollbar-thumb:hover {
-        background: #2D3748; 
+        background: #2D3748;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "zustand": "https://esm.sh/zustand@5.0.3",
-    "zustand/middleware": "https://esm.sh/zustand@5.0.3/middleware",
-    "zustand/": "https://esm.sh/zustand@^5.0.10/",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.45.0"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
+  </head>
+
   <body>
     <div id="root"></div>
-    <script type="module" src="index.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+
+    <!-- 🔥 IMPORTANTE: apenas 1 entrada (Vite padrão) -->
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
 </html>

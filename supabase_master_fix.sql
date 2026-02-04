@@ -1,30 +1,64 @@
+-- =====================================================
+-- XCOTING - PROFILES (PRODUCTION READY)
+-- =====================================================
 
--- =============================================================================
--- XCOTING - MASTER SCHEMA FIX
--- =============================================================================
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
 
-DO $$ 
-BEGIN 
-    -- 1. Garantir card_last_four
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='accounts' AND column_name='card_last_four') THEN
-        ALTER TABLE accounts ADD COLUMN card_last_four TEXT;
-    END IF;
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
 
-    -- 2. Garantir card_holder_name
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='accounts' AND column_name='card_holder_name') THEN
-        ALTER TABLE accounts ADD COLUMN card_holder_name TEXT;
-    END IF;
+    role TEXT DEFAULT 'view',
+    tenant_id UUID NOT NULL,
 
-    -- 3. Garantir card_bank
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='accounts' AND column_name='card_bank') THEN
-        ALTER TABLE accounts ADD COLUMN card_bank TEXT;
-    END IF;
+    ads_power_profile_id TEXT,
 
-    -- 4. Remover colunas com nomes errados (Opcional, mas recomendado para limpeza)
-    -- ALTER TABLE accounts DROP COLUMN IF EXISTS card_four;
-    -- ALTER TABLE accounts DROP COLUMN IF EXISTS final_4_digitos;
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-END $$;
+-- -----------------
+-- ROLE CHECK
+-- -----------------
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
 
--- Forçar atualização do cache do Supabase
+ALTER TABLE public.profiles
+ADD CONSTRAINT profiles_role_check
+CHECK (role IN ('acesso_total', 'operador', 'view', 'asset_group'));
+
+
+-- =====================================================
+-- 🔒 RLS (REAL SECURITY)
+-- =====================================================
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+
+-- SELECT → só próprio perfil
+CREATE POLICY "profiles_select_own"
+ON public.profiles
+FOR SELECT
+USING (auth.uid() = id);
+
+
+-- UPDATE → só próprio
+CREATE POLICY "profiles_update_own"
+ON public.profiles
+FOR UPDATE
+USING (auth.uid() = id);
+
+
+-- INSERT → só seu próprio id
+CREATE POLICY "profiles_insert_own"
+ON public.profiles
+FOR INSERT
+WITH CHECK (auth.uid() = id);
+
+
+-- DELETE → só seu próprio
+CREATE POLICY "profiles_delete_own"
+ON public.profiles
+FOR DELETE
+USING (auth.uid() = id);
+
+
 NOTIFY pgrst, 'reload schema';

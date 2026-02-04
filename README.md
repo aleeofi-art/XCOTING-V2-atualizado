@@ -1,20 +1,28 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# XCoting – Ads Management SaaS
 
-# Run and deploy your AI Studio app
+Sistema SaaS para gestão, monitoramento e contingência de contas Google Ads em escala.
 
-This contains everything you need to run your app locally.
+## Stack
+- React + Vite
+- TypeScript
+- Supabase
+- Zustand
+- Tailwind
 
-View your app in AI Studio: https://ai.studio/apps/drive/18GUgzVwhHX5opDeB34ovH7xwdjn_ekst
+## Rodar local
 
-## Run Locally
+Pré-requisitos:
+Node 18+
 
-**Prerequisites:**  Node.js
+1. Instalar dependências
+npm install
 
+2. Criar .env.local
+VITE_SUPABASE_URL=xxx
+VITE_SUPABASE_ANON_KEY=xxx
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+3. Rodar
+npm run dev
+
+## Build produção
+npm run build

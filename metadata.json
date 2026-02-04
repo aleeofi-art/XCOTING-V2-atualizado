@@ -1,5 +1,8 @@
 {
-  "name": "XCoting - Ads Management SaaS",
-  "description": "Professional SaaS for monitoring, managing, and contesting Google Ads accounts at scale.",
+  "name": "xcoting-saas",
+  "displayName": "XCoting – Ads Management SaaS",
+  "description": "Professional SaaS for monitoring, managing and contesting Google Ads accounts at scale.",
+  "version": "1.0.0",
+  "private": true,
   "requestFramePermissions": []
 }

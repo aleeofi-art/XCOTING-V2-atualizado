@@ -1,6 +1,8 @@
+import React, { useEffect } from 'react';
+import { HashRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Scripts from './pages/Scripts';
@@ -9,35 +11,38 @@ import Suspensions from './pages/Suspensions';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
+
 import { useAppStore } from './store';
 import { useAuth } from './hooks/useAuth';
-import React, { useEffect } from 'react';
 
-const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const location = useLocation();
-  const isLoginPage = location.pathname === '/login';
-  const isRegisterPage = location.pathname === '/register';
 
-  if (isLoginPage || isRegisterPage) return <>{children}</>;
-
+// ===============================
+// Layout (apenas rotas logadas)
+// ===============================
+const Layout: React.FC = () => {
   return (
-    <div className="flex min-h-screen bg-background-primary text-text-primary font-sans antialiased selection:bg-primary selection:text-white">
+    <div className="flex min-h-screen bg-background-primary text-text-primary font-sans antialiased">
       <Sidebar />
+
       <main className="flex-1 ml-[260px] p-8 overflow-y-auto min-h-screen min-w-0">
-        {children}
+        <Outlet />
       </main>
     </div>
   );
 };
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const isAuthenticated = useAppStore(state => !!state.currentUser);
-  const isLoading = useAppStore(state => state.isLoading);
+
+// ===============================
+// Proteção de rota
+// ===============================
+const ProtectedRoute: React.FC = () => {
+  const isAuthenticated = useAppStore(s => !!s.currentUser);
+  const isLoading = useAppStore(s => s.isLoading);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background-primary">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary" />
       </div>
     );
   }
@@ -46,14 +51,21 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>;
+  return <Layout />;
 };
 
+
+// ===============================
+// App principal
+// ===============================
 const App: React.FC = () => {
-  useAuth();
-  
-  const initialize = useAppStore(state => state.initialize);
-  const isInitialized = useAppStore(state => state.isInitialized);
+  const initialize = useAppStore(s => s.initialize);
+  const isInitialized = useAppStore(s => s.isInitialized);
+  const auth = useAuth();
+
+  useEffect(() => {
+    auth();
+  }, []);
 
   useEffect(() => {
     if (!isInitialized) {
@@ -63,19 +75,23 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
-      <Layout>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/accounts" element={<ProtectedRoute><Accounts /></ProtectedRoute>} />
-          <Route path="/costs" element={<ProtectedRoute><Costs /></ProtectedRoute>} />
-          <Route path="/suspensions" element={<ProtectedRoute><Suspensions /></ProtectedRoute>} />
-          <Route path="/scripts" element={<ProtectedRoute><Scripts /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Layout>
+      <Routes>
+        {/* públicas */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* protegidas */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/costs" element={<Costs />} />
+          <Route path="/suspensions" element={<Suspensions />} />
+          <Route path="/scripts" element={<Scripts />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
     </HashRouter>
   );
 };

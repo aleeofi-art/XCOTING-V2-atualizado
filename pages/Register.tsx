@@ -10,26 +10,35 @@ const handleRegister = async (e: React.FormEvent) => {
   setIsSubmitting(true);
 
   try {
-    // 1️⃣ cria usuário
-    await supabase.auth.signUp({
+    // 1️⃣ CRIA USUÁRIO
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
-      password
+      password,
+      options: {
+        data: { name }
+      }
     });
 
-    // 🔥 2️⃣ FAZ LOGIN (ESSENCIAL)
-    await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    if (signUpError) throw signUpError;
 
-    // 3️⃣ cria tenant
-    const { data: tenant } = await supabase
+    // 2️⃣ LOGIN (obrigatório pra ter sessão)
+    const { data: loginData, error: loginError } =
+      await supabase.auth.signInWithPassword({ email, password });
+
+    if (loginError) throw loginError;
+
+    const userId = loginData.user.id; // ✅ ID CORRETO
+
+    // 3️⃣ CRIA TENANT
+    const { data: tenant, error: tenantError } = await supabase
       .from('tenants')
       .insert({ nome_empresa: name })
       .select()
       .single();
 
-    // 4️⃣ agora metadata salva corretamente
+    if (tenantError) throw tenantError;
+
+    // 4️⃣ SALVA TENANT NO AUTH METADATA
     await supabase.auth.updateUser({
       data: {
         tenant_id: tenant.id,
@@ -37,9 +46,9 @@ const handleRegister = async (e: React.FormEvent) => {
       }
     });
 
-    // 5️⃣ profile
+    // 5️⃣ PROFILE (🔥 CORRETO AQUI)
     await supabase.from('profiles').insert({
-      id: tenant.id,
+      id: userId, // ✅ USER ID (não tenant)
       name,
       email,
       role: 'operador',

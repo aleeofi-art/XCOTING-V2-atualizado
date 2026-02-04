@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "components"
+		},
+		{
+			"path": "hooks"
+		},
+		{
+			"path": "lib"
+		},
+		{
+			"path": "pages"
+		},
+		{
+			"path": "services"
+		},
+		{
+			"path": "utils"
+		}
+	]
+}
