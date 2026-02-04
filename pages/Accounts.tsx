@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import Layout from '../components/Layout';
 import { db } from '../services/db';
 import { AdAccount, Platform, AccountStatus, Script, CaseLog } from '../types';
-import { 
-  Search, Plus, MoreHorizontal, X, History, 
+import {
+  Search, Plus, MoreHorizontal, X, History,
   CheckCircle2, LayoutGrid,
   Trash2, Edit, Save, CreditCard, Clock, TerminalSquare, RefreshCw
 } from 'lucide-react';
@@ -395,7 +394,7 @@ const Accounts: React.FC = () => {
           </div>
         </>
       )}
-    </Layout>
+    </div>
   );
 };
 
