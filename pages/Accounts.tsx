@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Users, Plus, Trash2, Mail, User, Search, AlertCircle, 
-  X as CloseIcon, CheckCircle2, ShieldAlert, Globe, TrendingUp, Loader2
+  Users, CheckCircle2, Plus, Trash2, Search, 
+  X as CloseIcon, ShieldAlert, TrendingUp
 } from 'lucide-react';
-import { useTenant } from '../hooks/useTenant';
 import { useAppStore } from '../store';
+import { useTenant } from '../hooks/useTenant';
 import type { AdAccount } from '../types';
 
 const Badge: React.FC<{ status: string }> = ({ status }) => {
@@ -23,7 +23,6 @@ const Badge: React.FC<{ status: string }> = ({ status }) => {
 
 const Accounts: React.FC = () => {
   const { tenantId, loading: tenantLoading } = useTenant();
-  
   const profiles = useAppStore(state => state.profiles ?? []);
   const addProfile = useAppStore(state => state.addProfile);
   const updateProfile = useAppStore(state => state.updateProfile);
@@ -33,7 +32,6 @@ const Accounts: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [selectedAccount, setSelectedAccount] = useState<AdAccount | null>(null);
-  
   const [accountData, setAccountData] = useState<Partial<AdAccount>>({
     name: '',
     email: '',
@@ -47,21 +45,22 @@ const Accounts: React.FC = () => {
   // Loading state
   if (tenantLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brand-background">
-        <div className="text-center space-y-4">
-          <Loader2 className="w-16 h-16 text-indigo-500 animate-spin mx-auto" />
-          <p className="text-white font-bold uppercase">Carregando...</p>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Carregando...</p>
         </div>
       </div>
     );
   }
 
+  // No tenant error
   if (!tenantId) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brand-background">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
-          <AlertCircle className="w-16 h-16 text-red-500 mx-auto" />
           <p className="text-red-500 font-bold uppercase">Erro: Tenant não identificado</p>
+          <p className="text-slate-400 text-sm">Entre em contato com o suporte.</p>
         </div>
       </div>
     );
@@ -104,8 +103,10 @@ const Accounts: React.FC = () => {
       }
 
       setIsModalOpen(false);
+      setAccountData({});
     } catch (error) {
       console.error('Erro ao salvar conta:', error);
+      alert('Erro ao salvar conta');
     }
   };
 
@@ -134,7 +135,7 @@ const Accounts: React.FC = () => {
           <h2 className="text-4xl font-black text-white uppercase">CONTAS</h2>
           <p className="text-slate-500 mt-2">Gestão de contas Google Ads</p>
         </div>
-        
+
         <button
           onClick={handleCreateAccount}
           className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black flex items-center gap-3"
