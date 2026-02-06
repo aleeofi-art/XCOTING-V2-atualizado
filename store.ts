@@ -1,57 +1,154 @@
--- 1. Adicionar coluna user_id (se não existir)
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
-ALTER TABLE scripts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
-ALTER TABLE operational_costs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
-ALTER TABLE script_executions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
+import { create } from 'zustand'
+import { supabase } from './lib/supabase'
+import {
+  Profile,
+  Script,
+  OperationalCost,
+  ScriptExecution,
+  User,
+  PlanId,
+  SubscriptionPlan,
+  TeamMember,
+  ScriptSection,
+  UserRole
+} from './types'
 
--- 2. Habilitar RLS em TODAS as tabelas
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scripts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE operational_costs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE script_executions ENABLE ROW LEVEL SECURITY;
+import { profilesService } from './services/profilesService'
+import { scriptsService } from './services/scriptsService'
+import { costsService } from './services/costsService'
+import { executionService } from './services/executionService'
 
--- 3. PROFILES - Policies
-DROP POLICY IF EXISTS "Users view own profiles" ON profiles;
-CREATE POLICY "Users view own profiles" ON profiles FOR SELECT USING (user_id = auth.uid());
+/* ======================================================
+PLANS
+====================================================== */
 
-DROP POLICY IF EXISTS "Users insert own profiles" ON profiles;
-CREATE POLICY "Users insert own profiles" ON profiles FOR INSERT WITH CHECK (user_id = auth.uid());
+export const PLANS: Record<PlanId, SubscriptionPlan> = {
+  START_MENSAL: { id: 'START_MENSAL', name: 'STARTER', price: 47.9, maxContas: 25, maxUsuarios: 1, cycle: 'MENSAL', description: 'Iniciantes' },
+  PRO_MENSAL: { id: 'PRO_MENSAL', name: 'PRO', price: 147, maxContas: 50, maxUsuarios: 3, cycle: 'MENSAL', description: 'Popular' },
+  ELITE_MENSAL: { id: 'ELITE_MENSAL', name: 'MASTER', price: 197.9, maxContas: 200, maxUsuarios: 8, cycle: 'MENSAL', description: 'Elite' }
+}
 
-DROP POLICY IF EXISTS "Users update own profiles" ON profiles;
-CREATE POLICY "Users update own profiles" ON profiles FOR UPDATE USING (user_id = auth.uid());
+/* ======================================================
+STATE
+====================================================== */
 
-DROP POLICY IF EXISTS "Users delete own profiles" ON profiles;
-CREATE POLICY "Users delete own profiles" ON profiles FOR DELETE USING (user_id = auth.uid());
+interface AppState {
+  isLoading: boolean
+  isInitialized: boolean
+  error: string | null
 
--- 4. SCRIPTS - Policies
-DROP POLICY IF EXISTS "Users view own scripts" ON scripts;
-CREATE POLICY "Users view own scripts" ON scripts FOR SELECT USING (user_id = auth.uid());
+  currentUser: User | null
+  currentPlanId: PlanId
 
-DROP POLICY IF EXISTS "Users insert own scripts" ON scripts;
-CREATE POLICY "Users insert own scripts" ON scripts FOR INSERT WITH CHECK (user_id = auth.uid());
+  profiles: Profile[]
+  scripts: Script[]
+  executions: ScriptExecution[]
+  costs: OperationalCost[]
+  teamMembers: TeamMember[]
 
-DROP POLICY IF EXISTS "Users update own scripts" ON scripts;
-CREATE POLICY "Users update own scripts" ON scripts FOR UPDATE USING (user_id = auth.uid());
+  initialize: () => Promise<void>
+  setCurrentUser: (user: User | null) => void
+}
 
-DROP POLICY IF EXISTS "Users delete own scripts" ON scripts;
-CREATE POLICY "Users delete own scripts" ON scripts FOR DELETE USING (user_id = auth.uid());
+/* ======================================================
+STORE
+====================================================== */
 
--- 5. OPERATIONAL_COSTS - Policies
-DROP POLICY IF EXISTS "Users view own costs" ON operational_costs;
-CREATE POLICY "Users view own costs" ON operational_costs FOR SELECT USING (user_id = auth.uid());
+export const useAppStore = create<AppState>((set, get) => ({
+  isLoading: false,
+  isInitialized: false,
+  error: null,
 
-DROP POLICY IF EXISTS "Users insert own costs" ON operational_costs;
-CREATE POLICY "Users insert own costs" ON operational_costs FOR INSERT WITH CHECK (user_id = auth.uid());
+  currentUser: null,
+  currentPlanId: 'PRO_MENSAL',
 
-DROP POLICY IF EXISTS "Users update own costs" ON operational_costs;
-CREATE POLICY "Users update own costs" ON operational_costs FOR UPDATE USING (user_id = auth.uid());
+  profiles: [],
+  scripts: [],
+  executions: [],
+  costs: [],
+  teamMembers: [],
 
-DROP POLICY IF EXISTS "Users delete own costs" ON operational_costs;
-CREATE POLICY "Users delete own costs" ON operational_costs FOR DELETE USING (user_id = auth.uid());
+  /* ======================================================
+  INIT
+  ====================================================== */
 
--- 6. SCRIPT_EXECUTIONS - Policies
-DROP POLICY IF EXISTS "Users view own executions" ON script_executions;
-CREATE POLICY "Users view own executions" ON script_executions FOR SELECT USING (user_id = auth.uid());
+  initialize: async () => {
+    if (get().isLoading) return
 
-DROP POLICY IF EXISTS "Users insert own executions" ON script_executions;
-CREATE POLICY "Users insert own executions" ON script_executions FOR INSERT WITH CHECK (user_id = auth.uid());
+    set({ isLoading: true, error: null })
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session?.user) {
+        set({ isLoading: false, isInitialized: true })
+        return
+      }
+
+      const uid = session.user.id
+      const email = session.user.email || ''
+
+      /* -------------------------
+         PROFILE
+      ------------------------- */
+
+      let { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle()
+
+      if (!profile) {
+        const { data } = await supabase
+          .from('profiles')
+          .insert({
+            id: uid,
+            name: email.split('@')[0],
+            email,
+            role: 'acesso_total'
+          })
+          .select()
+          .single()
+
+        profile = data
+      }
+
+      /* -------------------------
+         LOAD DATA SAFE
+      ------------------------- */
+
+      const [profiles, scripts, costs, executions] = await Promise.all([
+        profilesService.getAll().catch(() => []),
+        scriptsService.getAll().catch(() => []),
+        costsService.getAll().catch(() => []),
+        executionService.getAll().catch(() => [])
+      ])
+
+      set({
+        currentUser: {
+          id: uid,
+          name: profile?.name || 'Usuário',
+          email,
+          role: profile?.role as any
+        },
+        profiles,
+        scripts,
+        costs,
+        executions,
+        isLoading: false,
+        isInitialized: true
+      })
+
+      console.log('Store sincronizado ✅')
+    } catch (e) {
+      console.error(e)
+      set({
+        error: 'Erro ao sincronizar banco',
+        isLoading: false,
+        isInitialized: true
+      })
+    }
+  },
+
+  setCurrentUser: (user) => set({ currentUser: user })
+}))
